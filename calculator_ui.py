@@ -127,46 +127,93 @@ class CalculatorUI(QMainWindow):
     def handle_number_input(self, digit):
         """Handle number and decimal input"""
         current = self.display.text()
-        if current == "0" or current == "Error":
-            self.display.setText(digit)
-        else:
-            if digit == '.' and '.' in current:
-                return  # Prevent multiple decimals
+        
+        # If we're building an expression and the display ends with an operator
+        if self.current_input and current.strip() and current.strip()[-1] in ['×', '÷', '+', '-']:
+            # Start new number after operator
+            if digit == '.':
+                self.display.setText(current + ' 0.')
+            else:
+                self.display.setText(current + ' ' + digit)
+        # If we're continuing to build the current number
+        elif self.current_input and not current.endswith(('×', '÷', '+', '-')):
+            # Get the last part (current number being typed)
+            parts = current.split()
+            if parts:
+                last_part = parts[-1]
+                if digit == '.' and '.' in last_part:
+                    return  # Prevent multiple decimals in same number
             self.display.setText(current + digit)
+        else:
+            # Normal number input behavior (starting fresh)
+            if current == "0" or current == "Error":
+                self.display.setText(digit)
+            else:
+                if digit == '.' and '.' in current:
+                    return  # Prevent multiple decimals
+                self.display.setText(current + digit)
     
     def handle_operator_input(self, operator):
         """Handle operator input"""
-        current = self.display.text()
-        if current == "Error":
+        current = self.display.text().strip()
+        if current == "Error" or not current:
             return
         
         # Convert display operator to internal operator
         op_map = {'×': '*', '÷': '/'}
         internal_op = op_map.get(operator, operator)
         
-        self.current_input = current + ' ' + internal_op + ' '
-        self.display.setText("0")
+        # If there's already a current input, we're chaining operations
+        if self.current_input:
+            # If the display already shows an expression, use it as is
+            if any(op in current for op in ['×', '÷', '+', '-']):
+                # Update the expression with new operator
+                self.current_input = current.replace('×', '*').replace('÷', '/') + ' ' + internal_op + ' '
+            else:
+                # Add the current number and new operator
+                self.current_input += current + ' ' + internal_op + ' '
+        else:
+            # Start new expression
+            self.current_input = current + ' ' + internal_op + ' '
+        
+        # Show the building expression in display (with display operators)
+        display_expr = self.current_input.replace('*', '×').replace('/', '÷')
+        self.display.setText(display_expr)
     
     def handle_equals(self):
-        """Handle equals button press"""
-        current = self.display.text()
-        if current == "Error":
+        """Handle equals button press - THIS IS WHERE WE CLEAR"""
+        current = self.display.text().strip()
+        if current == "Error" or not current:
             return
         
-        expression = self.current_input + current
+        # Determine the complete expression
+        if self.current_input:
+            # If we have a pending operation
+            if any(op in current for op in ['×', '÷', '+', '-']):
+                # The display already contains the full expression
+                expression = current.replace('×', '*').replace('÷', '/')
+            else:
+                # Current display is just the last number
+                expression = self.current_input + current
+        else:
+            # No pending operation, just evaluate what's shown
+            expression = current.replace('×', '*').replace('÷', '/')
+        
         if not expression.strip():
             return
         
         try:
             result = self.logic.calculate(expression)
-            self.display.setText(str(result))
             
-            # Add to history
+            # Add to history before clearing
             display_expr = expression.replace('*', '×').replace('/', '÷')
             self.history.add_calculation(display_expr, str(result))
             self.update_history_display()
             
+            # NOW we clear and show only result
+            self.display.setText(str(result))
             self.current_input = ""
+            
         except Exception as e:
             self.display.setText("Error")
             self.current_input = ""
@@ -179,7 +226,16 @@ class CalculatorUI(QMainWindow):
     
     def handle_clear_entry(self):
         """Clear current entry only"""
-        self.display.setText("0")
+        current = self.display.text().strip()
+        
+        if self.current_input:
+            # If we're in the middle of building an expression
+            # Just reset to show the pending operation
+            display_expr = self.current_input.replace('*', '×').replace('/', '÷')
+            self.display.setText(display_expr.rstrip())
+        else:
+            # Just clear the display
+            self.display.setText("0")
     
     def handle_backspace(self):
         """Remove last character"""
@@ -187,21 +243,43 @@ class CalculatorUI(QMainWindow):
         if current == "Error" or current == "0":
             return
         
-        if len(current) == 1:
+        if len(current) <= 1:
             self.display.setText("0")
+            self.current_input = ""
         else:
-            self.display.setText(current[:-1])
+            new_text = current[:-1].rstrip()
+            if not new_text:
+                self.display.setText("0")
+                self.current_input = ""
+            else:
+                self.display.setText(new_text)
+                # Update current_input if we're modifying it
+                if self.current_input:
+                    self.current_input = new_text.replace('×', '*').replace('÷', '/') + ' '
     
     def handle_sign_change(self):
         """Change sign of current number"""
-        current = self.display.text()
-        if current == "Error" or current == "0":
+        current = self.display.text().strip()
+        if current == "Error" or not current:
             return
         
-        if current.startswith('-'):
-            self.display.setText(current[1:])
+        # If we're in the middle of an expression
+        if self.current_input and any(op in current for op in ['×', '÷', '+', '-']):
+            # Find the last number and change its sign
+            parts = current.split()
+            if parts and parts[-1].replace('-', '').replace('.', '').isdigit():
+                last_num = parts[-1]
+                if last_num.startswith('-'):
+                    parts[-1] = last_num[1:]
+                else:
+                    parts[-1] = '-' + last_num
+                self.display.setText(' '.join(parts))
         else:
-            self.display.setText('-' + current)
+            # Simple case - just the number on display
+            if current.startswith('-'):
+                self.display.setText(current[1:])
+            else:
+                self.display.setText('-' + current)
     
     def setup_keyboard_shortcuts(self):
         """Setup keyboard mappings"""

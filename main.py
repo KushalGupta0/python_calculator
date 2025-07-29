@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+
 """
 Python Calculator with PySide6
 Entry point for the calculator application
